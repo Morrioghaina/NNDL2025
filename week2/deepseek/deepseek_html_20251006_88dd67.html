@@ -71,6 +71,22 @@
             width: 100%;
         }
         
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #f2f2f2;
+        }
+        
         @media (max-width: 768px) {
             body {
                 padding: 10px;
@@ -79,6 +95,17 @@
             .metrics-container {
                 flex-direction: column;
             }
+        }
+
+        /* TFVis styling */
+        .tfjs-visor-container {
+            z-index: 1000;
+        }
+
+        .tfjs-visor-surface {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
         }
     </style>
 </head>

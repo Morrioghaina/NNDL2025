@@ -162,7 +162,7 @@ function displayDataInfo(trainData, testData) {
 function calculateMissingValues(data) {
     const columns = Object.keys(data[0]);
     return columns.map(col => {
-        const missingCount = data.filter(row => row[col] === '' || row[col] === null || row[col] === undefined).length;
+        const missingCount = data.filter(row => row[col] === '' || row[col] === null || row[col] === undefined || isNaN(row[col])).length;
         const missingPercent = (missingCount / data.length) * 100;
         return [col, missingPercent];
     });
@@ -171,48 +171,123 @@ function calculateMissingValues(data) {
 // Create data visualizations using tfjs-vis
 function createDataVisualizations(data) {
     // Survival by Sex
-    const survivalBySex = {};
+    const sexCounts = {
+        'male': { survived: 0, died: 0 },
+        'female': { survived: 0, died: 0 }
+    };
+    
     data.forEach(row => {
-        if (row.Sex && row.Survived !== undefined) {
-            const key = `${row.Sex}-${row.Survived}`;
-            survivalBySex[key] = (survivalBySex[key] || 0) + 1;
+        if (row.Sex && row.Survived !== undefined && row.Survived !== '') {
+            const sex = row.Sex.toLowerCase();
+            const survived = parseInt(row.Survived);
+            
+            if (sexCounts[sex]) {
+                if (survived === 1) {
+                    sexCounts[sex].survived++;
+                } else {
+                    sexCounts[sex].died++;
+                }
+            }
         }
     });
     
-    const sexData = Object.keys(survivalBySex).map(key => {
-        const [sex, survived] = key.split('-');
-        return {
-            x: `${sex} - ${survived === '1' ? 'Survived' : 'Died'}`,
-            y: survivalBySex[key]
-        };
-    });
+    const sexData = [
+        { index: 0, x: 'Male - Died', y: sexCounts.male.died },
+        { index: 1, x: 'Male - Survived', y: sexCounts.male.survived },
+        { index: 2, x: 'Female - Died', y: sexCounts.female.died },
+        { index: 3, x: 'Female - Survived', y: sexCounts.female.survived }
+    ];
     
     // Survival by Pclass
-    const survivalByPclass = {};
+    const pclassCounts = {
+        '1': { survived: 0, died: 0 },
+        '2': { survived: 0, died: 0 },
+        '3': { survived: 0, died: 0 }
+    };
+    
     data.forEach(row => {
-        if (row.Pclass && row.Survived !== undefined) {
-            const key = `Class ${row.Pclass}-${row.Survived}`;
-            survivalByPclass[key] = (survivalByPclass[key] || 0) + 1;
+        if (row.Pclass && row.Survived !== undefined && row.Survived !== '') {
+            const pclass = row.Pclass.toString();
+            const survived = parseInt(row.Survived);
+            
+            if (pclassCounts[pclass]) {
+                if (survived === 1) {
+                    pclassCounts[pclass].survived++;
+                } else {
+                    pclassCounts[pclass].died++;
+                }
+            }
         }
     });
     
-    const pclassData = Object.keys(survivalByPclass).map(key => ({
-        x: key.replace('-', ' - '),
-        y: survivalByPclass[key]
-    }));
+    const pclassData = [
+        { index: 0, x: 'Class 1 - Died', y: pclassCounts['1'].died },
+        { index: 1, x: 'Class 1 - Survived', y: pclassCounts['1'].survived },
+        { index: 2, x: 'Class 2 - Died', y: pclassCounts['2'].died },
+        { index: 3, x: 'Class 2 - Survived', y: pclassCounts['2'].survived },
+        { index: 4, x: 'Class 3 - Died', y: pclassCounts['3'].died },
+        { index: 5, x: 'Class 3 - Survived', y: pclassCounts['3'].survived }
+    ];
     
-    // Create visualizations
-    tfvis.render.barchart(
-        { name: 'Survival by Sex', tab: 'Data Inspection' },
-        sexData,
-        { xLabel: 'Category', yLabel: 'Count' }
-    );
+    // Create visualizations with proper configuration
+    try {
+        // Create a container for the visualizations
+        const surfaceContainer = document.createElement('div');
+        surfaceContainer.style.marginTop = '20px';
+        elements.dataInfo.appendChild(surfaceContainer);
+        
+        // Render survival by sex
+        tfvis.render.barchart(
+            { name: 'Survival by Sex', tab: 'Data Inspection', container: surfaceContainer },
+            sexData,
+            {
+                xLabel: 'Category',
+                yLabel: 'Count',
+                width: 400,
+                height: 300
+            }
+        );
+        
+        // Render survival by passenger class
+        tfvis.render.barchart(
+            { name: 'Survival by Passenger Class', tab: 'Data Inspection', container: surfaceContainer },
+            pclassData,
+            {
+                xLabel: 'Category',
+                yLabel: 'Count',
+                width: 500,
+                height: 300
+            }
+        );
+        
+    } catch (error) {
+        console.error('Error creating visualizations:', error);
+        // Fallback: display data in table format
+        displayFallbackVisualizations(sexData, pclassData);
+    }
+}
+
+// Fallback display if tfvis fails
+function displayFallbackVisualizations(sexData, pclassData) {
+    let fallbackHTML = '<h4>Data Distribution (Fallback Display)</h4>';
     
-    tfvis.render.barchart(
-        { name: 'Survival by Passenger Class', tab: 'Data Inspection' },
-        pclassData,
-        { xLabel: 'Category', yLabel: 'Count' }
-    );
+    fallbackHTML += '<h5>Survival by Sex:</h5><table border="1" style="border-collapse: collapse; margin-bottom: 20px;">';
+    fallbackHTML += '<tr><th>Category</th><th>Count</th></tr>';
+    sexData.forEach(item => {
+        fallbackHTML += `<tr><td>${item.x}</td><td>${item.y}</td></tr>`;
+    });
+    fallbackHTML += '</table>';
+    
+    fallbackHTML += '<h5>Survival by Passenger Class:</h5><table border="1" style="border-collapse: collapse;">';
+    fallbackHTML += '<tr><th>Category</th><th>Count</th></tr>';
+    pclassData.forEach(item => {
+        fallbackHTML += `<tr><td>${item.x}</td><td>${item.y}</td></tr>`;
+    });
+    fallbackHTML += '</table>';
+    
+    const fallbackDiv = document.createElement('div');
+    fallbackDiv.innerHTML = fallbackHTML;
+    elements.dataInfo.appendChild(fallbackDiv);
 }
 
 // Preprocess the data
@@ -278,8 +353,8 @@ function extractFeatures(row) {
     const features = {};
     
     // Handle numeric features with imputation
-    const age = row.Age === '' || row.Age === undefined ? 29.7 : parseFloat(row.Age); // Median imputation
-    const fare = row.Fare === '' || row.Fare === undefined ? 14.45 : parseFloat(row.Fare); // Median imputation
+    const age = row.Age === '' || row.Age === undefined || isNaN(row.Age) ? 29.7 : parseFloat(row.Age); // Median imputation
+    const fare = row.Fare === '' || row.Fare === undefined || isNaN(row.Fare) ? 14.45 : parseFloat(row.Fare); // Median imputation
     
     // Standardize numeric features
     features.Age = (age - 29.7) / 13.0; // Rough standardization
@@ -373,17 +448,17 @@ function createModel() {
 function displayModelSummary(model) {
     let summaryHTML = `<h3>Model Summary</h3>`;
     
-    model.summary().then(() => {
-        // tfjs doesn't provide a direct way to get summary as string in browser
-        // So we'll create a simple summary
-        summaryHTML += `<p><strong>Architecture:</strong> Dense(16, relu) → Dense(1, sigmoid)</p>`;
-        summaryHTML += `<p><strong>Total Parameters:</strong> ${model.countParams().toLocaleString()}</p>`;
-        summaryHTML += `<p><strong>Optimizer:</strong> Adam</p>`;
-        summaryHTML += `<p><strong>Loss:</strong> binaryCrossentropy</p>`;
-        summaryHTML += `<p><strong>Metrics:</strong> accuracy</p>`;
-        
-        elements.modelSummary.innerHTML = summaryHTML;
-    });
+    // Create simple summary since tfjs doesn't provide string summary in browser
+    const totalParams = model.countParams();
+    summaryHTML += `<p><strong>Architecture:</strong> Dense(16, relu) → Dense(1, sigmoid)</p>`;
+    summaryHTML += `<p><strong>Total Parameters:</strong> ${totalParams.toLocaleString()}</p>`;
+    summaryHTML += `<p><strong>Input Shape:</strong> [${model.inputs[0].shape.slice(1)}]</p>`;
+    summaryHTML += `<p><strong>Output Shape:</strong> [${model.outputs[0].shape.slice(1)}]</p>`;
+    summaryHTML += `<p><strong>Optimizer:</strong> Adam</p>`;
+    summaryHTML += `<p><strong>Loss:</strong> binaryCrossentropy</p>`;
+    summaryHTML += `<p><strong>Metrics:</strong> accuracy</p>`;
+    
+    elements.modelSummary.innerHTML = summaryHTML;
 }
 
 // Train the model
@@ -509,7 +584,7 @@ function updateMetrics(probabilities, trueLabels, threshold) {
 // Plot ROC curve
 function plotROCCurve(probabilities, trueLabels) {
     // Calculate ROC points
-    const thresholds = Array.from({ length: 100 }, (_, i) => i / 100);
+    const thresholds = Array.from({ length: 101 }, (_, i) => i / 100);
     const rocPoints = [];
     
     thresholds.forEach(threshold => {
@@ -539,13 +614,30 @@ function plotROCCurve(probabilities, trueLabels) {
         auc += width * avgHeight;
     }
     
-    // Plot ROC curve
-    if (typeof tfvis !== 'undefined') {
+    // Plot ROC curve with proper data structure
+    try {
+        const rocData = {
+            values: rocPoints,
+            series: ['ROC Curve']
+        };
+        
         tfvis.render.linechart(
             { name: `ROC Curve (AUC: ${auc.toFixed(4)})`, tab: 'Evaluation' },
-            { values: rocPoints },
-            { xLabel: 'False Positive Rate', yLabel: 'True Positive Rate' }
+            rocData,
+            {
+                xLabel: 'False Positive Rate',
+                yLabel: 'True Positive Rate',
+                xAxisDomain: [0, 1],
+                yAxisDomain: [0, 1],
+                width: 500,
+                height: 400
+            }
         );
+        
+        console.log(`ROC Curve plotted with AUC: ${auc.toFixed(4)}`);
+        
+    } catch (error) {
+        console.error('Error plotting ROC curve:', error);
     }
 }
 
@@ -671,37 +763,4 @@ function exportSubmission() {
 
 // Export probabilities CSV
 function exportProbabilities() {
-    if (!testData || !testPredictions) {
-        alert('No test probabilities to export');
-        return;
-    }
-    
-    let csvContent = 'PassengerId,Probability\n';
-    
-    testData.forEach((row, i) => {
-        const passengerId = row[ID_COLUMN];
-        const probability = testPredictions[i];
-        csvContent += `${passengerId},${probability.toFixed(6)}\n`;
-    });
-    
-    downloadCSV(csvContent, 'titanic_probabilities.csv');
-}
-
-// Download CSV file
-function downloadCSV(content, filename) {
-    const blob = new Blob([content], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-}
-
-// Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
-    initializeEventListeners();
-    console.log('Titanic Classifier initialized. Load your data to begin.');
-});
+    if (!testData ||
