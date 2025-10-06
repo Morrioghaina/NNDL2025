@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Titanic Binary Classifier - TensorFlow.js</title>
+    <title>Titanic Binary Classifier with TensorFlow.js</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
-        /* Basic responsive CSS */
         body {
             font-family: Arial, sans-serif;
             max-width: 1200px;
@@ -15,67 +15,73 @@
             padding: 20px;
             line-height: 1.6;
         }
-        
         section {
-            margin: 20px 0;
+            margin-bottom: 30px;
             padding: 15px;
             border: 1px solid #ddd;
             border-radius: 5px;
         }
-        
         h1, h2 {
             color: #333;
         }
-        
         button {
+            padding: 8px 15px;
+            margin: 5px;
             background-color: #4CAF50;
             color: white;
-            padding: 10px 15px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            margin: 5px;
         }
-        
         button:hover {
             background-color: #45a049;
         }
-        
         button:disabled {
             background-color: #cccccc;
             cursor: not-allowed;
         }
-        
         input[type="file"] {
             margin: 10px 0;
         }
-        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
         .metrics-container {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
         }
-        
         .metric-box {
-            border: 1px solid #ccc;
-            padding: 10px;
-            border-radius: 4px;
+            flex: 1;
             min-width: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
         }
-        
         .slider-container {
             margin: 15px 0;
         }
-        
-        .slider-container input {
-            width: 100%;
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
         }
-        
+        .deployment-note {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-left: 4px solid #4CAF50;
+            margin: 20px 0;
+        }
         @media (max-width: 768px) {
-            body {
-                padding: 10px;
-            }
-            
             .metrics-container {
                 flex-direction: column;
             }
@@ -83,104 +89,67 @@
     </style>
 </head>
 <body>
-    <h1>🚢 Titanic Binary Classifier - TensorFlow.js</h1>
+    <h1>Titanic Binary Classifier with TensorFlow.js</h1>
     
-    <!-- Data Load Section -->
-    <section id="data-load">
-        <h2>📊 Data Load</h2>
-        <p>Upload Titanic dataset CSV files:</p>
+    <section id="dataLoad">
+        <h2>Data Load</h2>
+        <p>Upload the Titanic dataset files:</p>
         <div>
-            <label for="train-file">Training Data (train.csv):</label>
-            <input type="file" id="train-file" accept=".csv">
+            <label for="trainFile">Train CSV (train.csv):</label>
+            <input type="file" id="trainFile" accept=".csv">
         </div>
         <div>
-            <label for="test-file">Test Data (test.csv):</label>
-            <input type="file" id="test-file" accept=".csv">
+            <label for="testFile">Test CSV (test.csv):</label>
+            <input type="file" id="testFile" accept=".csv">
         </div>
-        <button id="load-data-btn">Load & Inspect Data</button>
-        <div id="data-info"></div>
+        <button id="loadDataBtn">Load Data</button>
+        <div id="dataInfo"></div>
     </section>
     
-    <!-- Preprocessing Section -->
     <section id="preprocessing">
-        <h2>🔧 Preprocessing</h2>
-        <div>
-            <label>
-                <input type="checkbox" id="family-size-toggle" checked>
-                Add FamilySize feature (SibSp + Parch + 1)
-            </label>
-        </div>
-        <div>
-            <label>
-                <input type="checkbox" id="is-alone-toggle" checked>
-                Add IsAlone feature (FamilySize == 1)
-            </label>
-        </div>
-        <button id="preprocess-btn" disabled>Preprocess Data</button>
-        <div id="preprocess-info"></div>
+        <h2>Preprocessing</h2>
+        <button id="preprocessBtn" disabled>Preprocess Data</button>
+        <div id="preprocessingInfo"></div>
     </section>
     
-    <!-- Model Section -->
     <section id="model">
-        <h2>🧠 Model Architecture</h2>
-        <button id="create-model-btn" disabled>Create Model</button>
-        <div id="model-summary"></div>
+        <h2>Model</h2>
+        <button id="createModelBtn" disabled>Create Model</button>
+        <div id="modelInfo"></div>
     </section>
     
-    <!-- Training Section -->
     <section id="training">
-        <h2>🎯 Training</h2>
-        <button id="train-btn" disabled>Train Model</button>
-        <div id="training-progress"></div>
+        <h2>Training</h2>
+        <button id="trainBtn" disabled>Train Model</button>
+        <div id="trainingInfo"></div>
     </section>
     
-    <!-- Metrics Section -->
     <section id="metrics">
-        <h2>📈 Metrics & Evaluation</h2>
+        <h2>Metrics</h2>
         <div class="slider-container">
-            <label for="threshold-slider">Classification Threshold:</label>
-            <input type="range" id="threshold-slider" min="0" max="1" step="0.01" value="0.5" disabled>
-            <span id="threshold-value">0.5</span>
+            <label for="thresholdSlider">Classification Threshold: <span id="thresholdValue">0.5</span></label>
+            <input type="range" id="thresholdSlider" min="0" max="1" step="0.01" value="0.5" disabled>
         </div>
-        <div class="metrics-container">
-            <div class="metric-box">
-                <h3>Confusion Matrix</h3>
-                <div id="confusion-matrix"></div>
-            </div>
-            <div class="metric-box">
-                <h3>Performance Metrics</h3>
-                <div id="performance-metrics"></div>
-            </div>
-        </div>
-        <button id="evaluate-btn" disabled>Evaluate Model</button>
+        <div id="metricsInfo"></div>
+        <div id="evaluationTable"></div>
     </section>
     
-    <!-- Prediction Section -->
     <section id="prediction">
-        <h2>🔮 Prediction</h2>
-        <button id="predict-btn" disabled>Predict on Test Data</button>
-        <div id="prediction-results"></div>
+        <h2>Prediction</h2>
+        <button id="predictBtn" disabled>Predict on Test Set</button>
+        <div id="predictionInfo"></div>
     </section>
     
-    <!-- Export Section -->
     <section id="export">
-        <h2>💾 Export</h2>
-        <button id="export-model-btn" disabled>Export Model</button>
-        <button id="export-submission-btn" disabled>Export Submission CSV</button>
-        <button id="export-probabilities-btn" disabled>Export Probabilities CSV</button>
+        <h2>Export</h2>
+        <button id="exportBtn" disabled>Export Results</button>
+        <div id="exportInfo"></div>
     </section>
     
-    <!-- Deployment Notes -->
-    <section id="deployment">
-        <h2>🚀 Deployment Notes</h2>
-        <p><strong>To deploy on GitHub Pages:</strong></p>
-        <ol>
-            <li>Create a public GitHub repository</li>
-            <li>Commit index.html and app.js files</li>
-            <li>Enable GitHub Pages in repository settings (Source: main branch, root folder)</li>
-            <li>Test your deployed app at: https://[your-username].github.io/[repository-name]</li>
-        </ol>
-    </section>
+    <div class="deployment-note">
+        <h3>Deployment Notes:</h3>
+        <p>Create a public GitHub repository, commit index.html and app.js, enable GitHub Pages (main/root branch), and test the URL.</p>
+    </div>
 
     <script src="app.js"></script>
 </body>
