@@ -8,7 +8,7 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { text-align: center; color: #4CAF50; margin-bottom: 20px; }
         .upload-section { margin-bottom: 20px; padding: 20px; border: 2px dashed #ddd; border-radius: 8px; text-align: center; }
         .btn { background: #4CAF50; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px; }
@@ -24,6 +24,11 @@
         table { width: 100%; border-collapse: collapse; margin: 10px 0; }
         th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
         th { background: #f5f5f5; }
+        .sample-predictions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }
+        .sample { border: 3px solid; border-radius: 8px; padding: 10px; text-align: center; }
+        .sample.correct { border-color: #4CAF50; }
+        .sample.incorrect { border-color: #f44336; }
+        .sample-image { width: 100%; height: 120px; background: #eee; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -33,9 +38,12 @@
         <div id="message" class="message"></div>
         
         <div class="upload-section">
-            <h3>Upload CSV File</h3>
-            <p>CSV format: image_url,disease_name</p>
-            <input type="file" id="csvFile" accept=".csv">
+            <h3>Upload Dataset Files</h3>
+            <p>Upload a ZIP file containing chicken images and a CSV file with labels</p>
+            <div>
+                <label>Images ZIP: <input type="file" id="zipFile" accept=".zip"></label>
+                <label style="margin-left: 20px;">Labels CSV: <input type="file" id="csvFile" accept=".csv"></label>
+            </div>
             <button class="btn" id="trainBtn" disabled>Start Training</button>
         </div>
 
@@ -45,17 +53,19 @@
                 <div class="progress-bar">
                     <div id="epochProgress" class="progress-fill" style="width: 0%"></div>
                 </div>
-                <div>Loss: <span id="currentLoss">-</span> | Accuracy: <span id="currentAccuracy">-</span>%</div>
+                <div>Epoch: <span id="currentEpoch">0</span>/15 | Loss: <span id="currentLoss">-</span> | Accuracy: <span id="currentAccuracy">-</span>%</div>
             </div>
         </div>
 
         <div id="resultsSection" class="results" style="display: none;">
             <h3>Results</h3>
+            <div id="datasetInfo"></div>
             <div id="diseaseRanking"></div>
             <div id="samplePredictions"></div>
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script type="module">
         import DataLoader from './data-loader.js';
         import CNNModel from './cnn.js';
@@ -69,29 +79,39 @@
             }
 
             initializeEventListeners() {
-                document.getElementById('csvFile').addEventListener('change', (e) => {
-                    document.getElementById('trainBtn').disabled = !e.target.files[0];
-                });
+                const zipInput = document.getElementById('zipFile');
+                const csvInput = document.getElementById('csvFile');
+                const trainBtn = document.getElementById('trainBtn');
+
+                const checkFiles = () => {
+                    trainBtn.disabled = !(zipInput.files[0] && csvInput.files[0]);
+                };
+
+                zipInput.addEventListener('change', checkFiles);
+                csvInput.addEventListener('change', checkFiles);
                 
-                document.getElementById('trainBtn').addEventListener('click', () => this.startTraining());
+                trainBtn.addEventListener('click', () => this.startTraining());
             }
 
             async startTraining() {
+                const zipFile = document.getElementById('zipFile').files[0];
                 const csvFile = document.getElementById('csvFile').files[0];
-                if (!csvFile) {
-                    this.showMessage('Please select a CSV file', 'error');
+                
+                if (!zipFile || !csvFile) {
+                    this.showMessage('Please select both ZIP and CSV files', 'error');
                     return;
                 }
 
                 try {
-                    this.showMessage('Loading dataset from CSV...', 'info');
+                    this.showMessage('Loading dataset...', 'info');
                     document.getElementById('trainingSection').style.display = 'block';
                     document.getElementById('trainBtn').disabled = true;
 
-                    // Load data from CSV
-                    this.currentData = await this.dataLoader.loadFromCSV(csvFile);
+                    // Load data
+                    this.currentData = await this.dataLoader.loadDataset(zipFile, csvFile);
                     
-                    this.showMessage(`Loaded ${this.currentData.labelMap.size} disease classes`, 'success');
+                    this.showMessage(`Loaded dataset with ${this.currentData.labelMap.size} disease classes`, 'success');
+                    this.showDatasetInfo();
 
                     // Create and train model
                     this.model = new CNNModel(this.currentData.labelMap.size);
@@ -126,7 +146,21 @@
                 }
             }
 
+            showDatasetInfo() {
+                const infoDiv = document.getElementById('datasetInfo');
+                const totalSamples = this.currentData.originalImages.length;
+                const trainSamples = this.currentData.trainIndices.length;
+                const testSamples = this.currentData.testIndices.length;
+                
+                infoDiv.innerHTML = `
+                    <h4>Dataset Information</h4>
+                    <p>Total samples: ${totalSamples} | Training: ${trainSamples} | Testing: ${testSamples}</p>
+                    <p>Disease classes: ${Array.from(this.currentData.labelMap.keys()).join(', ')}</p>
+                `;
+            }
+
             updateTrainingProgress(epoch, logs) {
+                document.getElementById('currentEpoch').textContent = epoch + 1;
                 document.getElementById('currentLoss').textContent = logs.loss.toFixed(4);
                 document.getElementById('currentAccuracy').textContent = (logs.acc * 100).toFixed(2);
                 document.getElementById('epochProgress').style.width = `${((epoch + 1) / 15) * 100}%`;
@@ -135,16 +169,17 @@
             displayResults(metrics) {
                 // Show disease ranking
                 const rankingDiv = document.getElementById('diseaseRanking');
-                rankingDiv.innerHTML = '<h4>Disease Accuracy Ranking</h4>';
+                rankingDiv.innerHTML = '<h4>Disease Classification Accuracy</h4>';
                 
                 const table = document.createElement('table');
                 table.innerHTML = `
                     <thead>
-                        <tr><th>Disease</th><th>Accuracy</th><th>Samples</th></tr>
+                        <tr><th>Rank</th><th>Disease</th><th>Accuracy</th><th>Test Samples</th></tr>
                     </thead>
                     <tbody>
-                        ${metrics.diseaseRanking.map(item => `
+                        ${metrics.diseaseRanking.map((item, index) => `
                             <tr>
+                                <td>${index + 1}</td>
                                 <td>${item.disease}</td>
                                 <td>${(item.accuracy * 100).toFixed(1)}%</td>
                                 <td>${item.samples}</td>
@@ -153,6 +188,43 @@
                     </tbody>
                 `;
                 rankingDiv.appendChild(table);
+
+                // Show sample predictions
+                this.showSamplePredictions(metrics);
+            }
+
+            showSamplePredictions(metrics) {
+                const samplesDiv = document.getElementById('samplePredictions');
+                samplesDiv.innerHTML = '<h4>Sample Predictions</h4>';
+                
+                const container = document.createElement('div');
+                container.className = 'sample-predictions';
+                
+                // Show first 12 test samples
+                const numSamples = Math.min(12, metrics.trueLabels.length);
+                
+                for (let i = 0; i < numSamples; i++) {
+                    const trueLabel = metrics.trueLabels[i];
+                    const predLabel = metrics.predictions[i];
+                    const isCorrect = trueLabel === predLabel;
+                    
+                    const sampleDiv = document.createElement('div');
+                    sampleDiv.className = `sample ${isCorrect ? 'correct' : 'incorrect'}`;
+                    sampleDiv.innerHTML = `
+                        <div class="sample-image">Image ${i + 1}</div>
+                        <div class="sample-info">
+                            <div><strong>True:</strong> ${this.currentData.reverseLabelMap.get(trueLabel)}</div>
+                            <div><strong>Predicted:</strong> ${this.currentData.reverseLabelMap.get(predLabel)}</div>
+                            <div style="color: ${isCorrect ? '#4CAF50' : '#f44336'}; font-weight: bold;">
+                                ${isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                            </div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(sampleDiv);
+                }
+                
+                samplesDiv.appendChild(container);
             }
 
             showMessage(message, type = 'info') {
