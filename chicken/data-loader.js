@@ -2,36 +2,30 @@ import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/t
 
 class DataLoader {
     constructor() {
+        this.images = [];
+        this.labels = [];
         this.labelMap = new Map();
         this.reverseLabelMap = new Map();
         this.imageSize = 128;
     }
 
-    async loadFromCSV(csvFile) {
-        const csvData = await this.readCSV(csvFile);
-        const images = [];
-        const labels = [];
-
-        // Load images from URLs
-        for (const row of csvData) {
-            try {
-                const img = await this.loadImageFromUrl(row.url);
-                const tensor = this.preprocessImage(img);
-                images.push(tensor);
-                labels.push(row.labelIndex);
-            } catch (error) {
-                console.warn(`Failed to load image: ${row.url}`, error);
-            }
+    async loadDataset(zipFile, csvFile) {
+        try {
+            // Parse CSV file first to get label mapping
+            await this.parseCSV(csvFile);
+            
+            // Extract and process images from ZIP
+            await this.extractImages(zipFile);
+            
+            // Preprocess data
+            return this.preprocessData();
+        } catch (error) {
+            console.error('Error loading dataset:', error);
+            throw error;
         }
-
-        if (images.length === 0) {
-            throw new Error('No images could be loaded from the URLs');
-        }
-
-        return this.createTrainTestSplit(images, labels);
     }
 
-    async readCSV(csvFile) {
+    async parseCSV(csvFile) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -40,9 +34,9 @@ class DataLoader {
                     const lines = csvText.split('\n').filter(line => line.trim());
                     
                     // Skip header if exists
-                    const startIndex = lines[0].includes('image_url') ? 1 : 0;
+                    const startIndex = lines[0].includes('image') || lines[0].includes('label') ? 1 : 0;
                     
-                    // Get unique labels and create mapping
+                    // Create label mapping from all labels in CSV
                     const uniqueLabels = [...new Set(lines.slice(startIndex).map(line => {
                         const parts = line.split(',');
                         return parts[1] ? parts[1].trim() : '';
@@ -52,21 +46,23 @@ class DataLoader {
                         this.labelMap.set(label, index);
                         this.reverseLabelMap.set(index, label);
                     });
-
-                    // Parse CSV data
-                    const data = [];
-                    for (let i = startIndex; i < lines.length; i++) {
-                        const [url, label] = lines[i].split(',');
-                        if (url && label && this.labelMap.has(label.trim())) {
-                            data.push({
-                                url: url.trim(),
-                                label: label.trim(),
-                                labelIndex: this.labelMap.get(label.trim())
-                            });
-                        }
-                    }
                     
-                    resolve(data);
+                    // Store filename to label mapping
+                    this.fileLabelMap = new Map();
+                    lines.slice(startIndex).forEach(line => {
+                        const parts = line.split(',');
+                        if (parts.length >= 2) {
+                            const filename = parts[0].trim();
+                            const label = parts[1].trim();
+                            if (filename && label) {
+                                this.fileLabelMap.set(filename, label);
+                            }
+                        }
+                    });
+                    
+                    console.log(`Found ${this.fileLabelMap.size} labeled images`);
+                    console.log(`Disease classes: ${Array.from(this.labelMap.keys())}`);
+                    resolve();
                 } catch (error) {
                     reject(error);
                 }
@@ -76,13 +72,66 @@ class DataLoader {
         });
     }
 
-    loadImageFromUrl(url) {
+    async extractImages(zipFile) {
+        if (typeof JSZip === 'undefined') {
+            throw new Error('JSZip library not loaded. Please include JSZip in your HTML.');
+        }
+
+        const zip = new JSZip();
+        const zipContent = await zip.loadAsync(zipFile);
+        
+        this.images = [];
+        this.labels = [];
+        this.originalImages = [];
+        
+        // Process each file in ZIP
+        const imageFiles = Object.keys(zipContent.files).filter(name => 
+            name.match(/\.(jpg|jpeg|png)$/i) && !zipContent.files[name].dir
+        );
+
+        console.log(`Found ${imageFiles.length} images in ZIP`);
+
+        let processedCount = 0;
+        for (const filename of imageFiles) {
+            const label = this.fileLabelMap.get(filename);
+            if (label === undefined) {
+                console.warn(`No label found for image: ${filename}`);
+                continue;
+            }
+
+            try {
+                const file = zipContent.files[filename];
+                const blob = await file.async('blob');
+                const img = await this.loadImage(blob);
+                const processed = this.preprocessImage(img);
+                
+                this.images.push(processed);
+                this.labels.push(this.labelMap.get(label));
+                this.originalImages.push({
+                    filename: filename,
+                    label: label,
+                    imageData: processed
+                });
+                
+                processedCount++;
+            } catch (error) {
+                console.warn(`Failed to process image: ${filename}`, error);
+            }
+        }
+
+        console.log(`Successfully processed ${processedCount} images`);
+        
+        if (processedCount === 0) {
+            throw new Error('No images could be processed. Check if CSV filenames match ZIP filenames.');
+        }
+    }
+
+    loadImage(blob) {
         return new Promise((resolve, reject) => {
             const img = new Image();
-            img.crossOrigin = 'anonymous';
             img.onload = () => resolve(img);
-            img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
-            img.src = url;
+            img.onerror = reject;
+            img.src = URL.createObjectURL(blob);
         });
     }
 
@@ -92,22 +141,32 @@ class DataLoader {
         canvas.width = this.imageSize;
         canvas.height = this.imageSize;
         
+        // Draw and resize image
         ctx.drawImage(img, 0, 0, this.imageSize, this.imageSize);
-        return tf.browser.fromPixels(canvas)
-            .toFloat()
-            .div(255.0);
+        return canvas;
     }
 
-    createTrainTestSplit(images, labels) {
-        const X = tf.stack(images);
-        const y = tf.oneHot(tf.tensor1d(labels, 'int32'), this.labelMap.size);
+    preprocessData() {
+        if (this.images.length === 0) {
+            throw new Error('No images loaded');
+        }
 
-        // Clean up individual tensors
-        images.forEach(t => t.dispose());
+        // Convert to tensors
+        const imageTensors = this.images.map(canvas => {
+            return tf.browser.fromPixels(canvas)
+                .toFloat()
+                .div(255.0); // Normalize to [0, 1]
+        });
 
-        // Split data (80% train, 20% test)
-        const splitIndex = Math.floor(images.length * 0.8);
-        const indices = tf.util.createShuffledIndices(images.length);
+        const X = tf.stack(imageTensors);
+        const y = tf.oneHot(tf.tensor1d(this.labels, 'int32'), this.labelMap.size);
+
+        // Clean up intermediate tensors
+        imageTensors.forEach(t => t.dispose());
+
+        // Split into train/test (80/20)
+        const splitIndex = Math.floor(this.images.length * 0.8);
+        const indices = tf.util.createShuffledIndices(this.images.length);
         
         const trainIndices = indices.slice(0, splitIndex);
         const testIndices = indices.slice(splitIndex);
@@ -117,6 +176,7 @@ class DataLoader {
         const y_train = tf.gather(y, trainIndices);
         const y_test = tf.gather(y, testIndices);
 
+        // Clean up
         X.dispose();
         y.dispose();
 
@@ -126,8 +186,16 @@ class DataLoader {
             y_train,
             y_test,
             labelMap: this.labelMap,
-            reverseLabelMap: this.reverseLabelMap
+            reverseLabelMap: this.reverseLabelMap,
+            originalImages: this.originalImages,
+            trainIndices,
+            testIndices
         };
+    }
+
+    dispose() {
+        this.images = [];
+        this.labels = [];
     }
 }
 
