@@ -10,6 +10,7 @@ class CNNModel {
     createModel() {
         const model = tf.sequential({
             layers: [
+                // First convolutional layer
                 tf.layers.conv2d({
                     inputShape: [this.imageSize, this.imageSize, 3],
                     filters: 32,
@@ -18,6 +19,7 @@ class CNNModel {
                 }),
                 tf.layers.maxPooling2d({ poolSize: 2 }),
                 
+                // Second convolutional layer
                 tf.layers.conv2d({
                     filters: 64,
                     kernelSize: 3,
@@ -25,8 +27,17 @@ class CNNModel {
                 }),
                 tf.layers.maxPooling2d({ poolSize: 2 }),
                 
+                // Third convolutional layer
+                tf.layers.conv2d({
+                    filters: 64,
+                    kernelSize: 3,
+                    activation: 'relu'
+                }),
+                tf.layers.maxPooling2d({ poolSize: 2 }),
+                
+                // Flatten and dense layers
                 tf.layers.flatten(),
-                tf.layers.dense({ units: 64, activation: 'relu' }),
+                tf.layers.dense({ units: 128, activation: 'relu' }),
                 tf.layers.dropout({ rate: 0.5 }),
                 tf.layers.dense({ units: this.numClasses, activation: 'softmax' })
             ]
@@ -46,7 +57,7 @@ class CNNModel {
         this.history = await this.model.fit(X_train, y_train, {
             epochs,
             validationData: [X_test, y_test],
-            batchSize: 16,
+            batchSize: 32,
             callbacks: {
                 onEpochEnd: (epoch, logs) => {
                     if (callbacks.onEpochEnd) {
@@ -71,7 +82,7 @@ class CNNModel {
         const predArray = await predLabels.array();
         const trueArray = await trueLabels.array();
         
-        // Compute metrics
+        // Compute per-class accuracy
         const numClasses = this.numClasses;
         const classCorrect = Array(numClasses).fill(0);
         const classTotal = Array(numClasses).fill(0);
@@ -90,6 +101,7 @@ class CNNModel {
             classTotal[idx] > 0 ? correct / classTotal[idx] : 0
         );
         
+        // Rank diseases by accuracy
         const diseaseRanking = perClassAccuracy.map((acc, idx) => ({
             disease: reverseLabelMap.get(idx),
             accuracy: acc,
