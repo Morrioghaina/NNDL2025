@@ -11,13 +11,8 @@ class DataLoader {
 
     async loadDataset(zipFile, csvFile) {
         try {
-            // Parse CSV file first to get label mapping
             await this.parseCSV(csvFile);
-            
-            // Extract and process images from ZIP
             await this.extractImages(zipFile);
-            
-            // Preprocess data
             return this.preprocessData();
         } catch (error) {
             console.error('Error loading dataset:', error);
@@ -33,10 +28,8 @@ class DataLoader {
                     const csvText = e.target.result;
                     const lines = csvText.split('\n').filter(line => line.trim());
                     
-                    // Skip header if exists
                     const startIndex = lines[0].includes('image') || lines[0].includes('label') ? 1 : 0;
                     
-                    // Create label mapping from all labels in CSV
                     const uniqueLabels = [...new Set(lines.slice(startIndex).map(line => {
                         const parts = line.split(',');
                         return parts[1] ? parts[1].trim() : '';
@@ -47,7 +40,6 @@ class DataLoader {
                         this.reverseLabelMap.set(index, label);
                     });
                     
-                    // Store filename to label mapping
                     this.fileLabelMap = new Map();
                     lines.slice(startIndex).forEach(line => {
                         const parts = line.split(',');
@@ -74,7 +66,7 @@ class DataLoader {
 
     async extractImages(zipFile) {
         if (typeof JSZip === 'undefined') {
-            throw new Error('JSZip library not loaded. Please include JSZip in your HTML.');
+            throw new Error('JSZip library not loaded.');
         }
 
         const zip = new JSZip();
@@ -84,7 +76,6 @@ class DataLoader {
         this.labels = [];
         this.originalImages = [];
         
-        // Process each file in ZIP
         const imageFiles = Object.keys(zipContent.files).filter(name => 
             name.match(/\.(jpg|jpeg|png)$/i) && !zipContent.files[name].dir
         );
@@ -122,7 +113,7 @@ class DataLoader {
         console.log(`Successfully processed ${processedCount} images`);
         
         if (processedCount === 0) {
-            throw new Error('No images could be processed. Check if CSV filenames match ZIP filenames.');
+            throw new Error('No images could be processed.');
         }
     }
 
@@ -141,7 +132,6 @@ class DataLoader {
         canvas.width = this.imageSize;
         canvas.height = this.imageSize;
         
-        // Draw and resize image
         ctx.drawImage(img, 0, 0, this.imageSize, this.imageSize);
         return canvas;
     }
@@ -151,20 +141,17 @@ class DataLoader {
             throw new Error('No images loaded');
         }
 
-        // Convert to tensors
         const imageTensors = this.images.map(canvas => {
             return tf.browser.fromPixels(canvas)
                 .toFloat()
-                .div(255.0); // Normalize to [0, 1]
+                .div(255.0);
         });
 
         const X = tf.stack(imageTensors);
         const y = tf.oneHot(tf.tensor1d(this.labels, 'int32'), this.labelMap.size);
 
-        // Clean up intermediate tensors
         imageTensors.forEach(t => t.dispose());
 
-        // Split into train/test (80/20)
         const splitIndex = Math.floor(this.images.length * 0.8);
         const indices = tf.util.createShuffledIndices(this.images.length);
         
@@ -176,7 +163,6 @@ class DataLoader {
         const y_train = tf.gather(y, trainIndices);
         const y_test = tf.gather(y, testIndices);
 
-        // Clean up
         X.dispose();
         y.dispose();
 
