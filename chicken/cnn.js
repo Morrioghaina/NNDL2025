@@ -5,12 +5,12 @@ class CNNModel {
         this.numClasses = numClasses;
         this.imageSize = imageSize;
         this.model = null;
+        this.trainingHistory = [];
     }
 
     createModel() {
         const model = tf.sequential({
             layers: [
-                // First convolutional layer
                 tf.layers.conv2d({
                     inputShape: [this.imageSize, this.imageSize, 3],
                     filters: 32,
@@ -19,7 +19,6 @@ class CNNModel {
                 }),
                 tf.layers.maxPooling2d({ poolSize: 2 }),
                 
-                // Second convolutional layer
                 tf.layers.conv2d({
                     filters: 64,
                     kernelSize: 3,
@@ -27,7 +26,6 @@ class CNNModel {
                 }),
                 tf.layers.maxPooling2d({ poolSize: 2 }),
                 
-                // Third convolutional layer
                 tf.layers.conv2d({
                     filters: 64,
                     kernelSize: 3,
@@ -35,7 +33,6 @@ class CNNModel {
                 }),
                 tf.layers.maxPooling2d({ poolSize: 2 }),
                 
-                // Flatten and dense layers
                 tf.layers.flatten(),
                 tf.layers.dense({ units: 128, activation: 'relu' }),
                 tf.layers.dropout({ rate: 0.5 }),
@@ -53,13 +50,16 @@ class CNNModel {
         return model;
     }
 
-    async train(X_train, y_train, X_test, y_test, epochs = 15, callbacks = {}) {
+    async train(X_train, y_train, X_test, y_test, epochs = 20, callbacks = {}) {
+        this.trainingHistory = [];
+        
         this.history = await this.model.fit(X_train, y_train, {
             epochs,
             validationData: [X_test, y_test],
             batchSize: 32,
             callbacks: {
                 onEpochEnd: (epoch, logs) => {
+                    this.trainingHistory.push(logs);
                     if (callbacks.onEpochEnd) {
                         callbacks.onEpochEnd(epoch, logs);
                     }
@@ -81,9 +81,10 @@ class CNNModel {
         
         const predArray = await predLabels.array();
         const trueArray = await trueLabels.array();
+        const predictionProbabilities = await predictions.max(-1).array();
         
-        // Compute per-class accuracy
         const numClasses = this.numClasses;
+        const confusionMatrix = Array(numClasses).fill().map(() => Array(numClasses).fill(0));
         const classCorrect = Array(numClasses).fill(0);
         const classTotal = Array(numClasses).fill(0);
         
@@ -91,6 +92,7 @@ class CNNModel {
             const trueLabel = trueArray[i];
             const predLabel = predArray[i];
             
+            confusionMatrix[trueLabel][predLabel]++;
             classTotal[trueLabel]++;
             if (trueLabel === predLabel) {
                 classCorrect[trueLabel]++;
@@ -101,7 +103,6 @@ class CNNModel {
             classTotal[idx] > 0 ? correct / classTotal[idx] : 0
         );
         
-        // Rank diseases by accuracy
         const diseaseRanking = perClassAccuracy.map((acc, idx) => ({
             disease: reverseLabelMap.get(idx),
             accuracy: acc,
@@ -113,10 +114,12 @@ class CNNModel {
         trueLabels.dispose();
         
         return {
+            confusionMatrix,
             perClassAccuracy,
             diseaseRanking,
             predictions: predArray,
-            trueLabels: trueArray
+            trueLabels: trueArray,
+            predictionProbabilities
         };
     }
 
