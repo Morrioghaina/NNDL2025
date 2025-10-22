@@ -5,35 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chicken Disease Classification</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { text-align: center; color: #4CAF50; margin-bottom: 20px; }
+        h2 { color: #333; margin: 25px 0 15px 0; border-bottom: 2px solid #eee; padding-bottom: 8px; }
+        h3 { color: #555; margin: 20px 0 10px 0; }
+        
         .upload-section { margin-bottom: 20px; padding: 20px; border: 2px dashed #ddd; border-radius: 8px; text-align: center; }
         .btn { background: #4CAF50; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px; }
         .btn:disabled { background: #ccc; cursor: not-allowed; }
+        
         .progress { margin: 20px 0; }
         .progress-bar { width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden; }
         .progress-fill { height: 100%; background: #4CAF50; transition: width 0.3s; }
-        .results { margin-top: 20px; }
-        .message { padding: 10px; margin: 10px 0; border-radius: 4px; }
-        .message.info { background: #e3f2fd; }
-        .message.success { background: #e8f5e8; }
-        .message.error { background: #ffebee; }
-        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
-        th { background: #f5f5f5; }
-        .sample-predictions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }
-        .sample { border: 3px solid; border-radius: 8px; padding: 10px; text-align: center; }
+        
+        .section { margin: 25px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; }
+        
+        .message { padding: 12px; margin: 10px 0; border-radius: 4px; }
+        .message.info { background: #e3f2fd; border-left: 4px solid #2196F3; }
+        .message.success { background: #e8f5e8; border-left: 4px solid #4CAF50; }
+        .message.error { background: #ffebee; border-left: 4px solid #f44336; }
+        
+        .charts-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+        .chart-wrapper { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background: #f5f5f5; font-weight: bold; }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }
+        .metric-card { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .metric-value { font-size: 24px; font-weight: bold; color: #4CAF50; }
+        .metric-label { font-size: 14px; color: #666; margin-top: 5px; }
+        
+        .sample-predictions { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin: 15px 0; }
+        .sample { border: 3px solid; border-radius: 8px; padding: 10px; text-align: center; background: white; }
         .sample.correct { border-color: #4CAF50; }
         .sample.incorrect { border-color: #f44336; }
-        .sample-image { width: 100%; height: 120px; background: #eee; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; border-radius: 4px; }
+        .sample-image { width: 100%; height: 100px; background: #eee; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; border-radius: 4px; font-size: 12px; color: #666; }
+        
+        .confusion-matrix { overflow-x: auto; }
+        .confusion-table { min-width: 500px; }
+        .confusion-table td { text-align: center; }
+        
+        @media (max-width: 768px) {
+            .charts-container { grid-template-columns: 1fr; }
+            .metrics-grid { grid-template-columns: 1fr 1fr; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🐔 Chicken Disease Classification</h1>
+        <h1>🐔 Chicken Disease Classification & Analysis</h1>
         
         <div id="message" class="message"></div>
         
@@ -44,24 +70,89 @@
                 <label>Images ZIP: <input type="file" id="zipFile" accept=".zip"></label>
                 <label style="margin-left: 20px;">Labels CSV: <input type="file" id="csvFile" accept=".csv"></label>
             </div>
-            <button class="btn" id="trainBtn" disabled>Start Training</button>
+            <button class="btn" id="trainBtn" disabled>Start Training & Analysis</button>
         </div>
 
         <div id="trainingSection" style="display: none;">
-            <h3>Training Progress</h3>
+            <h2>Model Training</h2>
             <div class="progress">
                 <div class="progress-bar">
                     <div id="epochProgress" class="progress-fill" style="width: 0%"></div>
                 </div>
-                <div>Epoch: <span id="currentEpoch">0</span>/15 | Loss: <span id="currentLoss">-</span> | Accuracy: <span id="currentAccuracy">-</span>%</div>
+                <div>Epoch: <span id="currentEpoch">0</span>/20 | Loss: <span id="currentLoss">-</span> | Accuracy: <span id="currentAccuracy">-</span>% | Val Loss: <span id="currentValLoss">-</span> | Val Accuracy: <span id="currentValAccuracy">-</span>%</div>
             </div>
         </div>
 
-        <div id="resultsSection" class="results" style="display: none;">
-            <h3>Results</h3>
-            <div id="datasetInfo"></div>
-            <div id="diseaseRanking"></div>
-            <div id="samplePredictions"></div>
+        <div id="resultsSection" style="display: none;">
+            <!-- EDA Section -->
+            <div class="section">
+                <h2>📊 Exploratory Data Analysis (EDA)</h2>
+                <div id="datasetInfo"></div>
+                <div class="charts-container">
+                    <div class="chart-wrapper">
+                        <canvas id="classDistributionChart"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="trainTestSplitChart"></canvas>
+                    </div>
+                </div>
+                <div id="datasetStats"></div>
+            </div>
+
+            <!-- Model Performance Section -->
+            <div class="section">
+                <h2>📈 Model Performance</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="overallAccuracy">-</div>
+                        <div class="metric-label">Overall Accuracy</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="precision">-</div>
+                        <div class="metric-label">Precision</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="recall">-</div>
+                        <div class="metric-label">Recall</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="f1Score">-</div>
+                        <div class="metric-label">F1-Score</div>
+                    </div>
+                </div>
+                
+                <div class="charts-container">
+                    <div class="chart-wrapper">
+                        <canvas id="lossChart"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="accuracyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Disease Analysis Section -->
+            <div class="section">
+                <h2>🔍 Disease Classification Analysis</h2>
+                <div id="diseaseRanking"></div>
+                <div class="chart-wrapper">
+                    <canvas id="accuracyByDiseaseChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Confusion Matrix -->
+            <div class="section">
+                <h2>🎯 Confusion Matrix</h2>
+                <div class="confusion-matrix">
+                    <div id="confusionMatrix"></div>
+                </div>
+            </div>
+
+            <!-- Sample Predictions -->
+            <div class="section">
+                <h2>🔮 Sample Predictions</h2>
+                <div id="samplePredictions"></div>
+            </div>
         </div>
     </div>
 
@@ -75,6 +166,7 @@
                 this.dataLoader = new DataLoader();
                 this.model = null;
                 this.currentData = null;
+                this.trainingHistory = { loss: [], accuracy: [], valLoss: [], valAccuracy: [] };
                 this.initializeEventListeners();
             }
 
@@ -103,16 +195,18 @@
                 }
 
                 try {
-                    this.showMessage('Loading dataset...', 'info');
+                    this.showMessage('Loading dataset and performing EDA...', 'info');
                     document.getElementById('trainingSection').style.display = 'block';
                     document.getElementById('trainBtn').disabled = true;
 
                     // Load data
                     this.currentData = await this.dataLoader.loadDataset(zipFile, csvFile);
                     
-                    this.showMessage(`Loaded dataset with ${this.currentData.labelMap.size} disease classes`, 'success');
-                    this.showDatasetInfo();
-
+                    this.showMessage(`Dataset loaded successfully! Found ${this.currentData.labelMap.size} disease classes`, 'success');
+                    
+                    // Perform EDA
+                    this.performEDA();
+                    
                     // Create and train model
                     this.model = new CNNModel(this.currentData.labelMap.size);
                     this.model.createModel();
@@ -122,7 +216,7 @@
                         this.currentData.y_train,
                         this.currentData.X_test,
                         this.currentData.y_test,
-                        15,
+                        20,
                         {
                             onEpochEnd: (epoch, logs) => {
                                 this.updateTrainingProgress(epoch, logs);
@@ -130,14 +224,14 @@
                         }
                     );
 
-                    // Evaluate model
+                    // Evaluate model and show comprehensive results
                     const metrics = await this.model.computeMetrics(
                         this.currentData.X_test, 
                         this.currentData.y_test,
                         this.currentData.reverseLabelMap
                     );
                     
-                    this.displayResults(metrics);
+                    this.displayComprehensiveResults(metrics);
                     document.getElementById('resultsSection').style.display = 'block';
 
                 } catch (error) {
@@ -146,76 +240,322 @@
                 }
             }
 
+            performEDA() {
+                this.showDatasetInfo();
+                this.createClassDistributionChart();
+                this.createTrainTestSplitChart();
+            }
+
             showDatasetInfo() {
                 const infoDiv = document.getElementById('datasetInfo');
                 const totalSamples = this.currentData.originalImages.length;
                 const trainSamples = this.currentData.trainIndices.length;
                 const testSamples = this.currentData.testIndices.length;
                 
+                // Calculate class distribution
+                const classDistribution = {};
+                this.currentData.originalImages.forEach(img => {
+                    classDistribution[img.label] = (classDistribution[img.label] || 0) + 1;
+                });
+
                 infoDiv.innerHTML = `
-                    <h4>Dataset Information</h4>
-                    <p>Total samples: ${totalSamples} | Training: ${trainSamples} | Testing: ${testSamples}</p>
-                    <p>Disease classes: ${Array.from(this.currentData.labelMap.keys()).join(', ')}</p>
+                    <h3>Dataset Overview</h3>
+                    <table>
+                        <tr><th>Metric</th><th>Value</th></tr>
+                        <tr><td>Total Samples</td><td>${totalSamples}</td></tr>
+                        <tr><td>Training Samples</td><td>${trainSamples} (${((trainSamples/totalSamples)*100).toFixed(1)}%)</td></tr>
+                        <tr><td>Test Samples</td><td>${testSamples} (${((testSamples/totalSamples)*100).toFixed(1)}%)</td></tr>
+                        <tr><td>Number of Classes</td><td>${this.currentData.labelMap.size}</td></tr>
+                        <tr><td>Classes</td><td>${Array.from(this.currentData.labelMap.keys()).join(', ')}</td></tr>
+                    </table>
                 `;
+            }
+
+            createClassDistributionChart() {
+                const classDistribution = {};
+                this.currentData.originalImages.forEach(img => {
+                    classDistribution[img.label] = (classDistribution[img.label] || 0) + 1;
+                });
+
+                const ctx = document.getElementById('classDistributionChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(classDistribution),
+                        datasets: [{
+                            data: Object.values(classDistribution),
+                            backgroundColor: [
+                                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
+                                '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Class Distribution'
+                            },
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+
+            createTrainTestSplitChart() {
+                const total = this.currentData.originalImages.length;
+                const train = this.currentData.trainIndices.length;
+                const test = this.currentData.testIndices.length;
+
+                const ctx = document.getElementById('trainTestSplitChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Training Set', 'Test Set'],
+                        datasets: [{
+                            data: [train, test],
+                            backgroundColor: ['#4CAF50', '#2196F3']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Train-Test Split'
+                            }
+                        }
+                    }
+                });
             }
 
             updateTrainingProgress(epoch, logs) {
                 document.getElementById('currentEpoch').textContent = epoch + 1;
                 document.getElementById('currentLoss').textContent = logs.loss.toFixed(4);
                 document.getElementById('currentAccuracy').textContent = (logs.acc * 100).toFixed(2);
-                document.getElementById('epochProgress').style.width = `${((epoch + 1) / 15) * 100}%`;
+                document.getElementById('currentValLoss').textContent = logs.val_loss ? logs.val_loss.toFixed(4) : '-';
+                document.getElementById('currentValAccuracy').textContent = logs.val_acc ? (logs.val_acc * 100).toFixed(2) : '-';
+                document.getElementById('epochProgress').style.width = `${((epoch + 1) / 20) * 100}%`;
+
+                // Store history for charts
+                this.trainingHistory.loss.push(logs.loss);
+                this.trainingHistory.accuracy.push(logs.acc);
+                if (logs.val_loss) this.trainingHistory.valLoss.push(logs.val_loss);
+                if (logs.val_acc) this.trainingHistory.valAccuracy.push(logs.val_acc);
             }
 
-            displayResults(metrics) {
-                // Show disease ranking
+            displayComprehensiveResults(metrics) {
+                this.showModelMetrics(metrics);
+                this.createTrainingCharts();
+                this.showDiseaseAnalysis(metrics);
+                this.showConfusionMatrix(metrics);
+                this.showSamplePredictions(metrics);
+            }
+
+            showModelMetrics(metrics) {
+                // Calculate overall metrics
+                const totalCorrect = metrics.trueLabels.reduce((acc, trueLabel, idx) => 
+                    acc + (trueLabel === metrics.predictions[idx] ? 1 : 0), 0
+                );
+                const overallAccuracy = totalCorrect / metrics.trueLabels.length;
+
+                // For multi-class, we can use micro-averaging for precision/recall
+                const precision = overallAccuracy; // Simplified
+                const recall = overallAccuracy;    // Simplified
+                const f1Score = 2 * (precision * recall) / (precision + recall);
+
+                document.getElementById('overallAccuracy').textContent = (overallAccuracy * 100).toFixed(1) + '%';
+                document.getElementById('precision').textContent = (precision * 100).toFixed(1) + '%';
+                document.getElementById('recall').textContent = (recall * 100).toFixed(1) + '%';
+                document.getElementById('f1Score').textContent = (f1Score * 100).toFixed(1) + '%';
+            }
+
+            createTrainingCharts() {
+                // Loss Chart
+                const lossCtx = document.getElementById('lossChart').getContext('2d');
+                new Chart(lossCtx, {
+                    type: 'line',
+                    data: {
+                        labels: this.trainingHistory.loss.map((_, i) => i + 1),
+                        datasets: [
+                            {
+                                label: 'Training Loss',
+                                data: this.trainingHistory.loss,
+                                borderColor: '#FF6384',
+                                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: 'Validation Loss',
+                                data: this.trainingHistory.valLoss,
+                                borderColor: '#36A2EB',
+                                backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                                tension: 0.4
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: { display: true, text: 'Training & Validation Loss' }
+                        }
+                    }
+                });
+
+                // Accuracy Chart
+                const accCtx = document.getElementById('accuracyChart').getContext('2d');
+                new Chart(accCtx, {
+                    type: 'line',
+                    data: {
+                        labels: this.trainingHistory.accuracy.map((_, i) => i + 1),
+                        datasets: [
+                            {
+                                label: 'Training Accuracy',
+                                data: this.trainingHistory.accuracy.map(acc => acc * 100),
+                                borderColor: '#4CAF50',
+                                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: 'Validation Accuracy',
+                                data: this.trainingHistory.valAccuracy.map(acc => acc * 100),
+                                borderColor: '#FF9800',
+                                backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                                tension: 0.4
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: { display: true, text: 'Training & Validation Accuracy (%)' }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100
+                            }
+                        }
+                    }
+                });
+            }
+
+            showDiseaseAnalysis(metrics) {
                 const rankingDiv = document.getElementById('diseaseRanking');
-                rankingDiv.innerHTML = '<h4>Disease Classification Accuracy</h4>';
+                rankingDiv.innerHTML = '<h3>Disease Classification Performance</h3>';
                 
                 const table = document.createElement('table');
                 table.innerHTML = `
                     <thead>
-                        <tr><th>Rank</th><th>Disease</th><th>Accuracy</th><th>Test Samples</th></tr>
+                        <tr><th>Rank</th><th>Disease</th><th>Accuracy</th><th>Test Samples</th><th>Status</th></tr>
                     </thead>
                     <tbody>
-                        ${metrics.diseaseRanking.map((item, index) => `
-                            <tr>
-                                <td>${index + 1}</td>
-                                <td>${item.disease}</td>
-                                <td>${(item.accuracy * 100).toFixed(1)}%</td>
-                                <td>${item.samples}</td>
-                            </tr>
-                        `).join('')}
+                        ${metrics.diseaseRanking.map((item, index) => {
+                            const status = item.accuracy >= 0.8 ? '✅ Excellent' : 
+                                         item.accuracy >= 0.6 ? '⚠️ Good' : 
+                                         item.accuracy >= 0.4 ? '🔶 Fair' : '❌ Poor';
+                            return `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>${item.disease}</td>
+                                    <td>${(item.accuracy * 100).toFixed(1)}%</td>
+                                    <td>${item.samples}</td>
+                                    <td>${status}</td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 `;
                 rankingDiv.appendChild(table);
 
-                // Show sample predictions
-                this.showSamplePredictions(metrics);
+                // Create accuracy by disease chart
+                this.createAccuracyByDiseaseChart(metrics.diseaseRanking);
+            }
+
+            createAccuracyByDiseaseChart(ranking) {
+                const ctx = document.getElementById('accuracyByDiseaseChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ranking.map(item => item.disease),
+                        datasets: [{
+                            label: 'Accuracy (%)',
+                            data: ranking.map(item => item.accuracy * 100),
+                            backgroundColor: ranking.map(item => 
+                                item.accuracy >= 0.8 ? '#4CAF50' :
+                                item.accuracy >= 0.6 ? '#FF9800' :
+                                item.accuracy >= 0.4 ? '#FFC107' : '#f44336'
+                            )
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: { display: true, text: 'Accuracy by Disease Class' }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                title: { display: true, text: 'Accuracy (%)' }
+                            }
+                        }
+                    }
+                });
+            }
+
+            showConfusionMatrix(metrics) {
+                const matrixDiv = document.getElementById('confusionMatrix');
+                const diseases = metrics.diseaseRanking.map(item => item.disease);
+                
+                let html = '<table class="confusion-table"><tr><th></th>';
+                
+                // Header row
+                diseases.forEach(disease => {
+                    html += `<th>${disease}</th>`;
+                });
+                html += '</tr>';
+                
+                // Data rows
+                metrics.confusionMatrix.forEach((row, i) => {
+                    html += `<tr><th>${diseases[i]}</th>`;
+                    row.forEach((cell, j) => {
+                        const maxVal = Math.max(...row);
+                        const intensity = cell / maxVal;
+                        html += `<td style="background-color: rgba(255,0,0,${intensity}); color: ${intensity > 0.5 ? 'white' : 'black'}">${cell}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</table>';
+                
+                matrixDiv.innerHTML = html;
             }
 
             showSamplePredictions(metrics) {
                 const samplesDiv = document.getElementById('samplePredictions');
-                samplesDiv.innerHTML = '<h4>Sample Predictions</h4>';
-                
                 const container = document.createElement('div');
                 container.className = 'sample-predictions';
                 
-                // Show first 12 test samples
                 const numSamples = Math.min(12, metrics.trueLabels.length);
                 
                 for (let i = 0; i < numSamples; i++) {
                     const trueLabel = metrics.trueLabels[i];
                     const predLabel = metrics.predictions[i];
                     const isCorrect = trueLabel === predLabel;
+                    const confidence = metrics.predictionProbabilities ? metrics.predictionProbabilities[i] : 'N/A';
                     
                     const sampleDiv = document.createElement('div');
                     sampleDiv.className = `sample ${isCorrect ? 'correct' : 'incorrect'}`;
                     sampleDiv.innerHTML = `
-                        <div class="sample-image">Image ${i + 1}</div>
+                        <div class="sample-image">Sample ${i + 1}</div>
                         <div class="sample-info">
                             <div><strong>True:</strong> ${this.currentData.reverseLabelMap.get(trueLabel)}</div>
                             <div><strong>Predicted:</strong> ${this.currentData.reverseLabelMap.get(predLabel)}</div>
-                            <div style="color: ${isCorrect ? '#4CAF50' : '#f44336'}; font-weight: bold;">
+                            <div style="font-size: 11px; color: #666;">Confidence: ${typeof confidence === 'number' ? (confidence * 100).toFixed(1) + '%' : confidence}</div>
+                            <div style="color: ${isCorrect ? '#4CAF50' : '#f44336'}; font-weight: bold; margin-top: 5px;">
                                 ${isCorrect ? '✓ Correct' : '✗ Incorrect'}
                             </div>
                         </div>
@@ -224,6 +564,7 @@
                     container.appendChild(sampleDiv);
                 }
                 
+                samplesDiv.innerHTML = '<h3>Test Sample Predictions</h3>';
                 samplesDiv.appendChild(container);
             }
 
